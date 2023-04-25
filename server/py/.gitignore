@@ -1,0 +1,7 @@
+*.cfg
+Include
+Lib
+Scripts
+bin
+share
+*.py[co]

@@ -1,0 +1,267 @@
+<!doctype html>
+<html>
+
+<head>
+  <title>Demo</title>
+
+  <meta charset='utf-8' />
+  <meta http-equiv='Content-type' content='text/html charset=utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+
+  <style type='text/css'>
+    .container {
+      padding: 8px;
+      margin: 0px 0px;
+      /* width: 720px;
+      height: 480px; */
+      border: 10px #333 solid;
+      display: inline-block;
+    }
+
+    .label {
+      width: 150px;
+      display: inline-block;
+    }
+
+    .label-value {
+      padding-left: 25px;
+      padding-right: 10px;
+      display: inline-block;
+      width: 100px;
+    }
+
+    .slide-container {
+      display: inline-block;
+    }
+
+    .slider {
+      width: 450px;
+    }
+
+    #canvas1 {
+      padding-top: 35px;
+      padding-bottom: 40px;
+    }
+  </style>
+</head>
+
+<body>
+  <input type='file' id='inp'>
+  <br>
+  <div class='container'>
+    <img id='canvas1' width='720' height='405' />
+  </div>
+  <br>
+  <div class='slide-container'>
+    <div class='label'>Kernel Size X </div>
+    <input type='range' min='0' max='25' value='3' class='slider' id='kernel_x'>  
+    <div class='label-value' id='kernelValueX'>3</div>
+  </div>
+
+  <div class='slide-container'>
+    <div class='label'>Kernel Size Y </div>
+    <input type='range' min='0' max='25' value='3' class='slider' id='kernel_y'>  
+    <div class='label-value' id='kernelValueY'>3</div>
+  </div>
+
+  <div class='slide-container'>
+    <div class='label'>Background Ratio </div>
+    <input type='range' min='0' max='10000' value='9000' class='slider' id='backGroundRatio'>  
+    <div class='label-value' id='backGroundRatioValue'>0.90000</div>
+  </div>
+
+  <div class='slide-container'>
+    <div class='label'>N-Mixtures </div>
+    <input type='range' min='1' max='100' value='5' class='slider' id='nMixtures'>
+    <div class='label-value' id='nMixturesValue'>5</div>
+  </div>
+
+  <div class='slide-container'>
+    <div class='label'>VarThreshold </div>
+    <input type='range' min='1' max='100' value='16' class='slider' id='varThreshold'>
+    <div class='label-value' id='varThresholdValue'>16</div>
+  </div>
+
+  <div class='slide-container'>
+    <div class='label'>VarInit </div>
+    <input type='range' min='1' max='100' value='15' class='slider' id='varInit'>
+    <div class='label-value' id='varInitValue'>15</div>
+  </div>
+
+  <div class='checkbox-container'>
+    <div class='label'>Using Median Blur </div>
+    <input type='checkbox' checked='true' class='checkbox' id='medianBlur'>
+  </div>
+
+  <div class='slide-container'>
+    <div class='label'>Median Size </div>
+    <input type='range' min='1' max='50' value='1' class='slider' id='medianSize'>
+    <div class='label-value' id='medianSizeValue'>3</div>
+  </div>
+
+  <br>
+
+  <div class='checkbox-container'>
+    <div class='label'>Erode </div>
+    <input type='checkbox' class='checkbox' id='erode'>
+  </div>
+
+  <div class='checkbox-container'>
+    <div class='label'>Dilate </div>
+    <input type='checkbox' class='checkbox' id='dilate'>
+  </div>
+
+</body>
+
+<script lang='javascript'>
+  const canvas = canvas1
+  //ws://127.0.0.1:8080
+  const ws = new WebSocket('ws://127.0.0.1:5000')
+  ws.binaryType = 'arraybuffer'
+
+  ws.onopen = function () {
+    //ws.send('begin-stream-file')
+  }
+
+  ws.onmessage = function (msg) {
+    if (typeof(msg.data) == 'string') {
+      data = JSON.parse(msg.data)
+
+      const r = (data.width * 3) / data.height
+
+      let w = Math.min(data.width * 3, screen.width)
+      let h = Math.min(data.height, screen.height)
+
+      if (w == screen.width) {
+        h = w / r
+      } else if (h == screen.height) {
+        w = h * r
+      }
+
+      canvas.width = w
+      canvas.height = h
+
+      return
+    }
+
+    const blob = new Blob([msg.data])
+    const srcBlob = URL.createObjectURL(blob);
+    canvas.src = srcBlob
+    //console.log(msg)
+    //console.log('recv')
+  }
+
+  ws.onerror = function (sock, e) {
+    console.log(e)
+  };
+
+  inp.onchange = async (evt) => {
+    const stream = inp.files[0].stream()
+    const reader = stream.getReader()
+    ws.send('begin-stream-file')
+
+
+    kernel_x.disabled = true
+    kernel_y.disabled = true
+    backGroundRatio.disabled = true
+    nMixtures.disabled = true
+    varThreshold.disabled = true
+    varInit.disabled = true
+
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) { break }
+      handleChunk(value)
+    }
+    ws.send('end-stream-file')
+    ws.send('begin-recv-result')
+    console.log('all done')
+  }
+
+  function handleChunk(buf) {
+    console.log('received a new buffer', buf.byteLength)
+    ws.send(buf)
+  }
+
+  function sendVariable(_name, _value) {
+    ws.send(JSON.stringify({
+      variable: true,
+      name: _name,
+      value: _value
+    }))
+  }
+
+  kernel_x.oninput = function() {
+    const v = this.value
+    kernelValueX.innerText = v
+    sendVariable('kernel', [v, kernel_y.value])
+  }
+
+  kernel_y.oninput = function() {
+    const v = this.value
+    kernelValueY.innerText = v
+    sendVariable('kernel', [kernel_x.value, v])
+  }
+
+  backGroundRatio.oninput = function() {
+    const v = this.value / this.max
+    backGroundRatioValue.innerText = v
+    //console.log(v)
+    sendVariable('backgroundRatio', v)
+  }
+
+  nMixtures.oninput = function() {
+    const v = this.value
+    nMixturesValue.innerText = v
+    //console.log(v)
+    sendVariable('nMixtures', v)
+  }
+
+  varThreshold.oninput = function() {
+    const v = this.value
+    varThresholdValue.innerText = v
+    //console.log(v)
+    sendVariable('backgroundRatio', v)
+  }
+
+  varInit.oninput = function() {
+    const v = this.value
+    varInitValue.innerText = v
+    //console.log(v)
+    sendVariable('nMixtures', v)
+  }
+
+  medianBlur.oninput = function() {
+    const v = this.checked
+
+    if (v == false) {
+      medianSize.disabled = true
+    } else {
+      medianSize.disabled = false
+    }
+
+    sendVariable('medianBlur', v)
+  }
+
+  medianSize.oninput = function() {
+    const v = this.value * 2 + 1
+    medianSizeValue.innerText = v
+    sendVariable('medianSize', v)
+  }
+
+
+  erode.oninput = function() {
+    const v = this.checked
+    sendVariable('erode', v)
+  }
+
+  dilate.oninput = function() {
+    const v = this.checked
+    sendVariable('dilate', v)
+  }
+
+
+</script>
+
+</html>
